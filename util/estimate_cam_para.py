@@ -1,7 +1,39 @@
 import argparse
+import os
 import cv2
+import math
 import numpy as np
 import copy
+
+
+def isRotationMatrix(R):
+    Rt = np.transpose(R)
+    shouldBeIdentity = np.dot(Rt, R)
+    I = np.identity(3, dtype=R.dtype)
+    n = np.linalg.norm(I - shouldBeIdentity)
+    return n < 1e-6
+
+
+# Calculates rotation matrix to euler angles
+# The result is the same as MATLAB except the order
+# of the euler angles ( x and z are swapped ).
+def rotationMatrixToEulerAngles(R):
+    #assert (isRotationMatrix(R))
+
+    sy = math.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
+
+    singular = sy < 1e-6
+
+    if not singular:
+        x = math.atan2(R[2, 1], R[2, 2])
+        y = math.atan2(-R[2, 0], sy)
+        z = math.atan2(R[1, 0], R[0, 0])
+    else:
+        x = math.atan2(-R[1, 2], R[1, 1])
+        y = math.atan2(-R[2, 0], sy)
+        z = 0
+
+    return np.array([x, y, z])
 
 class CameraPara:
 
@@ -37,39 +69,58 @@ class CameraPara:
         # 在self.Ki中添加一列[0,0,0]
         self.Ki = np.column_stack((self.Ki, np.array([0,0,0])))
 
-    def xy2uv(self,x,y):
+    @property
+    def focal(self):
+        return float(self.Ki[0,0])
+
+    @property
+    def T(self):
+        return float(self.Ki[0,2]) , float(self.Ki[1,2]) , float(self.Ko[2,3])
+
+    @property
+    def r_angles_deg(self):
+        return 0,0,0
+       #return tuple((180.0/np.pi)*rotationMatrixToEulerAngles(self.Ko[0:3,0:3]))
+
+
+
+    def xy2uv(self,x,y,z=0):
         # 计算uv
-        uv = np.dot(self.Ki, np.dot(self.Ko, np.array([x,y,0,1])))
+        uv = np.dot(self.Ki, np.dot(self.Ko, np.array([x,y,z,1])))
         # 归一化
         uv = uv/uv[2]
         return int(uv[0]), int(uv[1])
-    
 
-def xy2uv(x,y,Ki,Ko):
+
+class MappedTrackbar:
+    def __init__(self, name, window, min_v, max_v, v0, glob_var, after_chg_callback=None):
+        self._min_v = min_v
+        self._max_v = max_v
+        self._glob_var = glob_var
+        self._after_chg_callback = after_chg_callback
+        def_v0 = int(2147483640*(v0 - min_v)/(max_v - min_v))
+        if def_v0 < 0:
+            def_v0 = 0
+        cv2.createTrackbar(name, window, def_v0, 2147483647, self._map_val)
+
+    def _map_val(self, v):
+        new_v = self._min_v + (self._max_v-self._min_v)*(v/2147483647.0)
+        globals()[self._glob_var] = new_v
+        if self._after_chg_callback is not None:
+            self._after_chg_callback(new_v)
+
+def xy2uv(x,y,Ki,Ko, z=0):
     # 计算uv
-    uv = np.dot(Ki, np.dot(Ko, np.array([x,y,0,1])))
+    uv = np.dot(Ki, np.dot(Ko, np.array([x,y,z,1])))
     # 归一化
     uv = uv/uv[2]
     return int(uv[0]), int(uv[1])
 
 
-# 定义转换函数
-def get_real_theta(value):
-    return (value - 250) / 10.0
-
-def get_real_theta_z(value):
-    return (value - 500) / 5.0
-
-def get_real_focal(value):
-    return (value - 100) * 5
-
-def get_real_transition(value):
-    return (value-30) * 0.04
-
 # 定义滑动条回调函数
 
 def update_value_display():
-    global value_display,g_theta_x,g_theta_y,g_theta_z,g_focal,g_tz
+    global value_display,g_theta_x,g_theta_y,g_theta_z,g_focal,g_tz,g_ty,g_tz
     value_display.fill(0)  # 清空图像
     text = f"theta_x: {g_theta_x:.2f}"
     cv2.putText(value_display, text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, 255, 2)
@@ -81,32 +132,12 @@ def update_value_display():
     cv2.putText(value_display, text, (10, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, 255, 2)
     text = f"Tz: {g_tz:.2f}"
     cv2.putText(value_display, text, (10, 300), cv2.FONT_HERSHEY_SIMPLEX, 1, 255, 2)
+    text = f"Tx: {g_tx:.2f}"
+    cv2.putText(value_display, text, (10, 340), cv2.FONT_HERSHEY_SIMPLEX, 1, 255, 2)
+    text = f"Ty: {g_ty:.2f}"
+    cv2.putText(value_display, text, (10, 380), cv2.FONT_HERSHEY_SIMPLEX, 1, 255, 2)
     cv2.imshow('Values', value_display)
 
-def on_theta_x_change(value):
-    global g_theta_x
-    g_theta_x = get_real_theta(value)
-    update_value_display()
-    
-def on_theta_y_change(value):
-    global g_theta_y
-    g_theta_y = get_real_theta(value)
-    update_value_display()
-
-def on_theta_z_change(value):
-    global g_theta_z
-    g_theta_z = get_real_theta_z(value)
-    update_value_display()
-
-def on_focal_change(value):
-    global g_focal
-    g_focal = get_real_focal(value)
-    update_value_display()
-
-def on_tz_change(value):
-    global g_tz
-    g_tz = get_real_transition(value)
-    update_value_display()
 
 cv2.namedWindow('Values')
 # 初始化一个空白图像来显示实际值
@@ -115,28 +146,66 @@ g_theta_x = 0
 g_theta_y = 0
 g_theta_z = 0
 g_focal = 0
+g_tx = 0
+g_ty = 0
 g_tz = 0
+
+orimg = None
 
 def main(args):
 
+
+    if args.img.endswith(".mp4"):
+        cam = cv2.VideoCapture(args.img)
+        cam.grab()
+        _ , orimg = cam.read()
+    else:
+        orimg = cv2.imread(args.img)
+
+    # 获取img的大小
+    img = orimg.copy()
+    height, width = img.shape[:2]
+
+    if not os.path.exists(args.cam_para):
+        with open(args.cam_para,"w") as f:
+            halfw = int(width/2)
+            halfh = int(height/2)
+            f.write("RotationMatrices\n")
+            f.write("-0.37 -0.92 -0.057\n")
+            f.write("-0.51 0.25 -0.81\n")
+            f.write("0.77 -0.27 -0.57\n")
+            f.write("\n")
+            f.write("TranslationVectors\n")
+            f.write("0 1000 35000\n")
+            f.write("\n")
+            f.write("IntrinsicMatrix\n")
+            f.write(f"1000 0 {halfw}\n")
+            f.write(f"0 1000 {halfh}\n")
+            f.write("0 0 1\n")
+            f.write("\n")
+
+    global g_theta_x,g_theta_y,g_theta_z,g_focal,g_tz,g_tx,g_ty
+
     cam_para = CameraPara()
     cam_para.open(args.cam_para)
-
-    img = cv2.imread(args.img)
-    # 获取img的大小
-    height, width = img.shape[:2]
+    g_theta_x, g_theta_y, g_theta_z = cam_para.r_angles_deg
+    g_tx, g_ty, g_tz = cam_para.T
+    g_focal = cam_para.focal
 
     cv2.namedWindow('CamParaSettings')
     # 添加ui界面来修改theta_x,theta_y,theta_z, 调节访问是-10到10，间隔0.2
-    cv2.createTrackbar('theta_x', 'CamParaSettings', 250,500, on_theta_x_change)
-    cv2.createTrackbar('theta_y', 'CamParaSettings', 250,500, on_theta_y_change)
-    cv2.createTrackbar('theta_z', 'CamParaSettings', 500,1000, on_theta_z_change)
-    cv2.createTrackbar('focal', 'CamParaSettings', 100,500, on_focal_change)
-    cv2.createTrackbar('Tz', 'CamParaSettings', 30,500, on_tz_change)
 
-    global g_theta_x,g_theta_y,g_theta_z
+    theta_x_bar = MappedTrackbar('theta_x', 'CamParaSettings', -180, 180.0, g_theta_x, 'g_theta_x', after_chg_callback=lambda x: update_value_display())
+    theta_y_bar = MappedTrackbar('theta_y', 'CamParaSettings', -180, 180.0, g_theta_y, 'g_theta_y', after_chg_callback=lambda x: update_value_display())
+    theta_z_bar = MappedTrackbar('theta_z', 'CamParaSettings', -180, 180.0, g_theta_z, 'g_theta_z', after_chg_callback=lambda x: update_value_display())
+    focal_bar = MappedTrackbar('focal', 'CamParaSettings', -2500, 2500, g_focal, 'g_focal', after_chg_callback=lambda x: update_value_display())
+    tx_bar = MappedTrackbar('Tx', 'CamParaSettings', -width, width, g_tx, 'g_tx', after_chg_callback=lambda x: update_value_display())
+    ty_bar = MappedTrackbar('Ty', 'CamParaSettings', -height, height, g_ty, 'g_ty', after_chg_callback=lambda x: update_value_display())
+    tz_bar = MappedTrackbar('Tz', 'CamParaSettings', -100, 100, g_tz, 'g_tz', after_chg_callback=lambda x: update_value_display())
 
+    update_value_display()
     # 循环一直到按下q键
+    write_mod = False
     while True:
         theta_x = g_theta_x/180.0*np.pi
         theta_y = g_theta_y/180.0*np.pi
@@ -149,38 +218,51 @@ def main(args):
         Rz = np.array([[np.cos(theta_z),-np.sin(theta_z),0],[np.sin(theta_z),np.cos(theta_z),0],[0,0,1]])
         R = np.dot(R, np.dot(Rx, np.dot(Ry,Rz)))
         Ko[0:3,0:3] = R
-        Ko[2,3] += g_tz
-        Ki[0,0] += g_focal
-        Ki[1,1] += g_focal
+        Ko[2,3] = g_tz
+        Ki[0,0] = g_focal
+        Ki[1,1] = g_focal
+        Ki[0,2] = g_tx
+        Ki[1,2] = g_ty
+        img = orimg.copy()
 
-        img = cv2.imread(args.img)
         # x取值范围0-10，间隔0.1
-        for x in np.arange(0,10,0.5):
-            for y in np.arange(-5,5,0.5):
+        for x in np.arange(-10,10,1):
+            for y in np.arange(-10,10,1):
                 u,v = xy2uv(x,y,Ki,Ko)
-                cv2.circle(img, (u,v), 3, (0,255,0), -1)
+                r = 3
+                if x == 0 and y == 0:
+                    r = 8
+                cv2.circle(img, (u,v), r, (int((x+10)*100), int((y+10)*100) ,int((y+10)*10)), -1)
+
+        zerozero = xy2uv(0,0,Ki,Ko)
+        zerotop = xy2uv(0,0,Ki,Ko, z=180)
+        cv2.line(img, zerozero, zerotop, (255,0,0), 3)
 
         # 修改img的大小
-        img = cv2.resize(img, (int(width*0.5),int(height*0.5)))
+        #img = cv2.resize(img, (int(width*0.5),int(height*0.5)))
         cv2.imshow('img', img)
         key = cv2.waitKey(50)
         if key == ord('q'):
             break
+        if key == ord('w'):
+            write_mod = True
+            break
 
-    with open(args.cam_para, 'w') as f:
-        f.write("RotationMatrices\n")
-        for i in range(3):
-            for j in range(3):
-                f.write(str(R[i,j])+" ")
-            f.write("\n")
-        f.write("\nTranslationVectors\n")
-        for i in range(3):
-            f.write(str(int(Ko[i,3]*1000))+" ")
-        f.write("\n\nIntrinsicMatrix\n")
-        for i in range(3):
-            for j in range(3):
-                f.write(str(int(Ki[i,j]))+" ")
-            f.write("\n")
+    if write_mod:
+        with open(args.cam_para, 'w') as f:
+            f.write("RotationMatrices\n")
+            for i in range(3):
+                for j in range(3):
+                    f.write(str(R[i,j])+" ")
+                f.write("\n")
+            f.write("\nTranslationVectors\n")
+            for i in range(3):
+                f.write(str(int(Ko[i,3]*1000))+" ")
+            f.write("\n\nIntrinsicMatrix\n")
+            for i in range(3):
+                for j in range(3):
+                    f.write(str(int(Ki[i,j]))+" ")
+                f.write("\n")
 
 
 if __name__ == "__main__":
