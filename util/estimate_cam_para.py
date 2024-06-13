@@ -101,6 +101,7 @@ class MappedTrackbar:
         def_v0 = int(2147483640*(v0 - min_v)/(max_v - min_v))
         if def_v0 < 0:
             def_v0 = 0
+        print(name, window, def_v0, self._map_val)
         cv2.createTrackbar(name, window, def_v0, 2147483647, self._map_val)
 
     def _map_val(self, v):
@@ -198,7 +199,7 @@ def main(args):
     theta_x_bar = MappedTrackbar('theta_x', 'CamParaSettings', -180, 180.0, g_theta_x, 'g_theta_x', after_chg_callback=lambda x: update_value_display())
     theta_y_bar = MappedTrackbar('theta_y', 'CamParaSettings', -180, 180.0, g_theta_y, 'g_theta_y', after_chg_callback=lambda x: update_value_display())
     theta_z_bar = MappedTrackbar('theta_z', 'CamParaSettings', -180, 180.0, g_theta_z, 'g_theta_z', after_chg_callback=lambda x: update_value_display())
-    focal_bar = MappedTrackbar('focal', 'CamParaSettings', -2500, 2500, g_focal, 'g_focal', after_chg_callback=lambda x: update_value_display())
+    focal_bar = MappedTrackbar('focal', 'CamParaSettings', -3500, 3500, g_focal, 'g_focal', after_chg_callback=lambda x: update_value_display())
     tx_bar = MappedTrackbar('Tx', 'CamParaSettings', -width, width, g_tx, 'g_tx', after_chg_callback=lambda x: update_value_display())
     ty_bar = MappedTrackbar('Ty', 'CamParaSettings', -height, height, g_ty, 'g_ty', after_chg_callback=lambda x: update_value_display())
     tz_bar = MappedTrackbar('Tz', 'CamParaSettings', -100, 100, g_tz, 'g_tz', after_chg_callback=lambda x: update_value_display())
