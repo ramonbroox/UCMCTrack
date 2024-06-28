@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "ucmctrack"
+version = "0.1.0"
+description = ""
+authors = ["Ramon Poca <ramon@broox.io>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+numpy = "1.26.4"
+filterpy = "^1.4.5"
+lap = "^0.4.0"
+scipy = "^1.14.0"
+argparse = "^1.4.0"
+ultralytics = "^8.2.45"
+opencv-python = "^4.10.0.84"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
